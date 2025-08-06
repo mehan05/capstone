@@ -66,14 +66,15 @@ pub struct ListCar<'info>{
     pub system_program:Program<'info,System>,
     pub associated_token_program:Program<'info,AssociatedToken>,
     pub token_program:Interface<'info,TokenInterface>,
-    pub metadata_program:Program<'info,Metadata>
+    pub metadata_program:Program<'info,Metadata>,
+    pub clock:Sysvar<'info,Clock>
 
 }
 
 impl<'info> ListCar<'info>{
-    pub fn list_car(&mut self,rent_fee:u64, rental_duration:i64, deposit_amount:u64, bumps:ListCarBumps)->Result<()>{
+    pub fn list_car(&mut self,rent_fee:u64,  deposit_amount:u64, bumps:ListCarBumps)->Result<()>{
 
-        self.update_state(rent_fee,rental_duration,deposit_amount,bumps)?;
+        self.update_state(rent_fee,deposit_amount,bumps)?;
 
         self.transfer_nft()?;
 
@@ -81,14 +82,18 @@ impl<'info> ListCar<'info>{
 
     }
 
-    pub fn update_state(&mut self,rent_fee:u64, rental_duration:i64, deposit_amount:u64, bumps:ListCarBumps)->Result<()>{
+    pub fn update_state(&mut self,rent_fee:u64,  deposit_amount:u64, bumps:ListCarBumps)->Result<()>{
+
+        let clock  = Clock::get()?; 
 
         self.rental_state.set_inner(RentalState{
             car_owner:self.owner.key(),
             renter:None,
+            rental_duration:None,
+            rented:false,
             car_nft_mint:self.car_nft_mint.key(),
             rent_fee,
-            rental_duration,
+            rental_start_time:None,
             deposit_amount,
             rental_bump : bumps.rental_state,
             listed:true

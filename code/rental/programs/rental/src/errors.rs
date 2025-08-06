@@ -8,6 +8,11 @@ pub enum ErrorCode{
     RentalPeriodNotEnd,
 
     #[msg("Insufficient funds")]
-    InsufficientFunds
+    InsufficientFunds,
+
+    #[msg("Car already rented")]
+    CarAlreadyRented
+
+    
 }
 

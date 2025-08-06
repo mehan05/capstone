@@ -11,8 +11,12 @@ pub enum ErrorCode{
     InsufficientFunds,
 
     #[msg("Car already rented")]
-    CarAlreadyRented
+    CarAlreadyRented,
 
-    
+    #[msg("Values Overflow Error")]
+    ValueOverflow,
+
+    #[msg("Invalid Renter")]
+    InvalidRenter,
 }
 

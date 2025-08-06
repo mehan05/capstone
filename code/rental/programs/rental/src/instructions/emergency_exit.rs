@@ -1,6 +1,7 @@
-use anchor_lang::{prelude::*, system_program::transfer};
+use anchor_lang::{prelude::*};
 use anchor_spl::{
-    associated_token::AssociatedToken, metadata::{MasterEditionAccount, Metadata, MetadataAccount}, token_interface::{transfer_checked, Mint, TokenAccount, TokenInterface, TransferChecked}
+    associated_token::AssociatedToken, metadata::{MasterEditionAccount, Metadata, MetadataAccount}, 
+    token_interface::{transfer_checked, Mint, TokenAccount, TokenInterface, TransferChecked}
 };
 
 use crate::{state::*,errors::ErrorCode, constants::*};
@@ -25,7 +26,8 @@ pub struct EmergencyExit<'info> {
       #[account(
         mut,
         seeds=[b"rental", car_nft_mint.key().as_ref(), owner.key().as_ref()],
-        bump = rental_state.rental_bump
+        bump = rental_state.rental_bump,
+        has_one=owner
     )]
     pub rental_state:Account<'info,RentalState>,
 
@@ -54,7 +56,7 @@ pub struct EmergencyExit<'info> {
         constraint = metadata.collection.as_ref().unwrap().key.as_ref() == collection_mint.key().as_ref(),
         constraint = metadata.collection.as_ref().unwrap().verified == true,
     )]
-    pub metadata:InterfaceAccount<'info,MetadataAccount>,
+    pub metadata:Account<'info,MetadataAccount>,
 
     #[account(
         seeds=[
@@ -65,7 +67,7 @@ pub struct EmergencyExit<'info> {
         seeds::program = metadata_program.key(),
         bump
     )]
-    pub master_edition:InterfaceAccount<'info,MasterEditionAccount>,
+    pub master_edition:Account<'info,MasterEditionAccount>,
 
 
     #[account(
@@ -78,7 +80,7 @@ pub struct EmergencyExit<'info> {
 
     pub system_program:Program<'info,System>,
     pub associated_token_program:Program<'info,AssociatedToken>,
-    pub token_program:Program<'info,TokenInterface>,
+    pub token_program:Interface<'info,TokenInterface>,
     pub clock:Sysvar<'info,Clock>,
     pub metadata_program:Program<'info,Metadata>
 }
@@ -93,13 +95,13 @@ impl<'info> EmergencyExit<'info>{
         require!(current_time.unix_timestamp >= self.rental_state.rental_start_time.unwrap(),ErrorCode::RentalPeriodNotEnd);
 
         //sending nft to owner
-        self.transfer_generic(1, self.car_nft_mint.to_account_info(), self.owner.to_account_info(), self.vault.to_account_info())?;
+        self.transfer_generic(1, self.car_nft_mint.to_account_info(), self.owner.to_account_info(), self.vault.to_account_info(),self.car_nft_mint.decimals,self.rental_state.to_account_info())?;
 
         //sending deposit to renter
-        self.transfer_generic(deposit_amount,self.rent_fee_mint.to_account_info(), self.renter_ata.to_account_info(), self.rent_vault.to_account_info())?;
+        self.transfer_generic(deposit_amount,self.rent_fee_mint.to_account_info(), self.renter_ata.to_account_info(), self.rent_vault.to_account_info(),self.rent_fee_mint.decimals,self.rental_state.to_account_info())?;
 
         //sending rent to owner
-        self.transfer_generic(self.rental_state.rent_fee,self.rent_fee_mint.to_account_info(), self.rent_vault.to_account_info(),self.owner.to_account_info())?;
+        self.transfer_generic(self.rental_state.rent_fee,self.rent_fee_mint.to_account_info(), self.rent_vault.to_account_info(),self.owner.to_account_info(),self.rent_fee_mint.decimals,self.owner.to_account_info())?;
 
         self.rental_state.rental_duration = None;
         self.rental_state.renter = None;
@@ -109,14 +111,14 @@ impl<'info> EmergencyExit<'info>{
     
     }
 
-    pub fn transfer_generic(&mut self, amount:u64, mint:AccountInfo<'info>, to:AccountInfo<'info>, from:AccountInfo<'info>)->Result<()>{
+    pub fn transfer_generic(&mut self, amount:u64, mint:AccountInfo<'info>, to:AccountInfo<'info>, from:AccountInfo<'info>,decimals:u8,authority:AccountInfo<'info>)->Result<()>{
         let cpi_program = self.token_program.to_account_info();
 
         let cpi_accounts = TransferChecked{
             from:from.to_account_info(),
             to:to.to_account_info(),
             mint:mint.to_account_info(),
-            authority:self.owner.to_account_info()
+            authority:authority.to_account_info()
         };
 
         let car_nft_mint = self.car_nft_mint.key();
@@ -132,7 +134,7 @@ impl<'info> EmergencyExit<'info>{
 
         let ctx = CpiContext::new_with_signer(cpi_program,cpi_accounts,signer_seed);
 
-        transfer_checked(ctx, amount,6);
+        transfer_checked(ctx, amount,decimals)?;
 
         Ok(())
     }

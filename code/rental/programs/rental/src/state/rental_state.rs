@@ -3,7 +3,7 @@ use anchor_lang::prelude::*;
 #[account]
 #[derive(InitSpace)]
 pub struct RentalState {
-    pub car_owner:Pubkey,
+    pub owner:Pubkey,
     pub renter:Option<Pubkey>,
     pub car_nft_mint:Pubkey,
     pub rent_fee:u64,

@@ -1,9 +1,9 @@
-use anchor_lang::{prelude::*, system_program::transfer};
+use anchor_lang::{prelude::*};
 use anchor_spl::{
-    associated_token::AssociatedToken, metadata::{MasterEditionAccount, Metadata, MetadataAccount}, token_interface::{transfer_checked, Mint, TokenAccount, TokenInterface, TransferChecked}
+    associated_token::AssociatedToken, token_interface::{transfer_checked, Mint, TokenAccount, TokenInterface, TransferChecked}
 };
 
-use crate::{constants::*, errors::ErrorCode, instructions::EndRental, state::*,};
+use crate::{errors::ErrorCode, state::*,};
 
 
 #[derive(Accounts)]
@@ -18,14 +18,14 @@ pub struct RentCar<'info>{
     pub rent_fee_mint:InterfaceAccount<'info,Mint>,
 
     #[account(
-        mut,
         seeds=[b"rental", car_nft_mint.key().as_ref(), owner.key().as_ref()],
-        bump = rental_state.rental_bump
+        has_one = owner,
+        bump = rental_state.rental_bump,
     )]
     pub rental_state:Account<'info,RentalState>,
 
     #[account(
-        init,
+        init_if_needed,
         payer = renter,
         associated_token::mint = rent_fee_mint,
         associated_token::authority = rental_state,
@@ -42,17 +42,11 @@ pub struct RentCar<'info>{
     pub renter_ata:InterfaceAccount<'info,TokenAccount>,
 
     
-    #[account(
-        init_if_needed,
-        payer = renter,
-        associated_token::mint = rent_fee_mint,
-        associated_token::authority = renter,
-    )]
-    pub owner_ata:InterfaceAccount<'info,TokenAccount>,
+  
 
     pub system_program:Program<'info,System>,
     pub associated_token_program:Program<'info,AssociatedToken>,
-    pub token_program:Program<'info,TokenInterface>,
+    pub token_program:Interface<'info,TokenInterface>,
     pub clock: Sysvar<'info,Clock>
 }
 
@@ -62,9 +56,8 @@ impl<'info> RentCar<'info>{
 
     require!(self.rental_state.listed,ErrorCode::CarNotListed);
     require!(!self.rental_state.rented,ErrorCode::RentalPeriodNotEnd);
-    require!(self.rental_state.renter.is_none()&&self.rental_state.rental_duration==Some(0),ErrorCode::CarAlreadyRented);
 
-    self.transfer_rent_fee();    
+    self.transfer_rent_fee()?;    
 
     self.rental_state.rental_duration = Some(rental_duration);
     self.rental_state.renter = Some(self.renter.key());
@@ -76,16 +69,17 @@ impl<'info> RentCar<'info>{
 
   pub fn transfer_rent_fee(&mut  self)->Result<()>{
 
-   let total_fee: u64 = self.rental_state.rent_fee.checked_add(self.rental_state.deposit_amount).unwrap();
+   let total_fee: u64 = self.rental_state.rent_fee.checked_add(self.rental_state.deposit_amount).ok_or(ErrorCode::ValueOverflow)?;
 
-   let renter_balance = self.renter.to_account_info().lamports();
+   let renter_balance = self.renter_ata.amount;
 
    require!(renter_balance>=total_fee,ErrorCode::InsufficientFunds);
 
+   //getting rent fee
     let cpi_program = self.token_program.to_account_info();
 
     let cpi_accounts = TransferChecked{
-        from:self.renter.to_account_info(),
+        from:self.renter_ata.to_account_info(),
         to:self.rent_vault.to_account_info(),
         mint:self.rent_fee_mint.to_account_info(),
         authority:self.renter.to_account_info()
@@ -93,10 +87,11 @@ impl<'info> RentCar<'info>{
 
     let ctx = CpiContext::new(cpi_program.clone(),cpi_accounts);
 
-    transfer_checked(ctx, self.rental_state.rent_fee,self.rent_fee_mint.decimals);
+    transfer_checked(ctx, self.rental_state.rent_fee,self.rent_fee_mint.decimals)?;
 
+    //getting deposit fee
     let cpi_accounts = TransferChecked{
-        from:self.renter.to_account_info(),
+        from:self.renter_ata.to_account_info(),
         to:self.rent_vault.to_account_info(),
         mint:self.rent_fee_mint.to_account_info(),
         authority:self.renter.to_account_info()
@@ -104,7 +99,7 @@ impl<'info> RentCar<'info>{
 
     let ctx = CpiContext::new(cpi_program.clone(),cpi_accounts);
 
-    transfer_checked(ctx, self.rental_state.deposit_amount,self.rent_fee_mint.decimals);
+    transfer_checked(ctx, self.rental_state.deposit_amount,self.rent_fee_mint.decimals)?;
 
     Ok(())
   }

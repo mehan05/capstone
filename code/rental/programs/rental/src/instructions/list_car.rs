@@ -25,7 +25,6 @@ pub struct ListCar<'info>{
     )]
     pub rental_state:Account<'info,RentalState>,
 
-
     #[account(
         init,
         payer = owner,
@@ -33,7 +32,6 @@ pub struct ListCar<'info>{
         associated_token::authority = owner
     )]
     pub owner_nft_account:InterfaceAccount<'info,TokenAccount>,
-
 
     #[account(
         init,
@@ -84,19 +82,17 @@ impl<'info> ListCar<'info>{
 
     pub fn update_state(&mut self,rent_fee:u64,  deposit_amount:u64, bumps:ListCarBumps)->Result<()>{
 
-        let clock  = Clock::get()?; 
-
         self.rental_state.set_inner(RentalState{
-            car_owner:self.owner.key(),
+            owner:self.owner.key(),
             renter:None,
             rental_duration:None,
-            rented:false,
             car_nft_mint:self.car_nft_mint.key(),
             rent_fee,
             rental_start_time:None,
             deposit_amount,
             rental_bump : bumps.rental_state,
-            listed:true
+            listed:true,
+            rented:false,
         });
 
         Ok(())
@@ -115,7 +111,7 @@ impl<'info> ListCar<'info>{
 
         let ctx = CpiContext::new(cpi_program,cpi_accounts);
 
-        transfer_checked(ctx, 1,self.car_nft_mint.decimals);
+        transfer_checked(ctx, 1,self.car_nft_mint.decimals)?;
 
         Ok(())
     }

@@ -77,8 +77,8 @@ pub struct EndRental<'info>{
       #[account(
         init_if_needed,
         payer = owner,
-        associated_token::mint = rent_fee_mint,
-        associated_token::authority = renter,
+        associated_token::mint = car_nft_mint,
+        associated_token::authority = owner,
     )]
     pub owner_ata:InterfaceAccount<'info,TokenAccount>,
 
@@ -86,7 +86,7 @@ pub struct EndRental<'info>{
         init_if_needed,
         payer = renter,
         associated_token::mint = rent_fee_mint,
-        associated_token::authority = renter,
+        associated_token::authority = owner,
     )]
     pub owner_fee_ata:InterfaceAccount<'info,TokenAccount>,
 

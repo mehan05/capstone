@@ -30,6 +30,7 @@ import {
   TOKEN_PROGRAM_ID,
   ASSOCIATED_TOKEN_PROGRAM_ID,
 } from "@solana/spl-token";
+import { SYSTEM_PROGRAM_ID } from "@coral-xyz/anchor/dist/cjs/native/system";
 
 const provider = anchor.AnchorProvider.env();
 const RENT_FEE = new anchor.BN(5);
@@ -57,24 +58,25 @@ const create_ata = async (
     console.log(error);
   }
 };
-const airdrop_rent_token=async(to:PublicKey,amount:number,rent_fee_mint:PublicKey,)=>{
-    try {
-      let tx = await mintTo(
-        provider.connection,
-        provider.wallet.payer,
-        rent_fee_mint,
-        to,
-        provider.wallet.payer,
-        amount
-      );
-      
-    } catch (error) {
-        console.log(error);
-        throw   error;
-    } 
-
-  
-}
+const airdrop_rent_token = async (
+  to: PublicKey,
+  amount: number,
+  rent_fee_mint: PublicKey
+) => {
+  try {
+    let tx = await mintTo(
+      provider.connection,
+      provider.wallet.payer,
+      rent_fee_mint,
+      to,
+      provider.wallet.payer,
+      amount
+    );
+  } catch (error) {
+    console.log(error);
+    throw error;
+  }
+};
 const convert_keypair_to_anchor_compatiable = (keypair: any) => {
   return anchor.web3.Keypair.fromSecretKey(new Uint8Array(keypair.secretKey));
 };
@@ -247,7 +249,7 @@ describe("rental", async () => {
         provider.connection,
         provider.wallet.payer,
         new anchor.web3.PublicKey(rent_fee_mint),
-        new anchor.web3.PublicKey(rental_state),  
+        new anchor.web3.PublicKey(rental_state),
         true
       );
 
@@ -273,7 +275,6 @@ describe("rental", async () => {
   });
 
   describe("List cars", async () => {
-
     before(async () => {
       await program.methods
         .listCar(RENT_FEE, DEPOSIT_FEE)
@@ -322,59 +323,140 @@ describe("rental", async () => {
     });
   });
 
-
   describe("Rent Car", async () => {
-      
-      before(async () => {
-          let amount = RENT_FEE.toNumber() + DEPOSIT_FEE.toNumber();
-          await airdrop_rent_token(renter_fee_ata,amount,rent_fee_mint);
+    before(async () => {
+      let amount = RENT_FEE.toNumber() + DEPOSIT_FEE.toNumber();
+      await airdrop_rent_token(renter_fee_ata, amount, rent_fee_mint);
 
-          await program.methods.rentCar(new anchor.BN(RENTAL_DURATION))
-          .accountsStrict({
-              owner: new anchor.web3.PublicKey(owner.publicKey),
-              carNftMint: new anchor.web3.PublicKey(car_nft_mint.publicKey),
-              rentVault:rent_vault_ata,
-              renter: new anchor.web3.PublicKey(renter.publicKey),
-              rentFeeMint: new anchor.web3.PublicKey(rent_fee_mint),
-              renterAta: renter_fee_ata,
-              rentalState: rental_state,
-              clock: anchor.web3.SYSVAR_CLOCK_PUBKEY,
-              systemProgram: anchor.web3.SystemProgram.programId,
-              tokenProgram: TOKEN_PROGRAM_ID,
-              associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
-          })
-          .signers([convert_keypair_to_anchor_compatiable(renter)])
-          .rpc();
+      await program.methods
+        .rentCar(new anchor.BN(RENTAL_DURATION))
+        .accountsStrict({
+          owner: new anchor.web3.PublicKey(owner.publicKey),
+          carNftMint: new anchor.web3.PublicKey(car_nft_mint.publicKey),
+          rentVault: rent_vault_ata,
+          renter: new anchor.web3.PublicKey(renter.publicKey),
+          rentFeeMint: new anchor.web3.PublicKey(rent_fee_mint),
+          renterAta: renter_fee_ata,
+          rentalState: rental_state,
+          clock: anchor.web3.SYSVAR_CLOCK_PUBKEY,
+          systemProgram: anchor.web3.SystemProgram.programId,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+        })
+        .signers([convert_keypair_to_anchor_compatiable(renter)])
+        .rpc();
+    });
+
+    describe("Check Rent Fee and Pda State Update", async () => {
+      it("Checking Rent Fee is transferred to Contract", async () => {
+        let rent_vault_ata_balance = await getAccount(
+          provider.connection,
+          rent_vault_ata
+        );
+
+        expect(rent_vault_ata_balance.amount.toString()).to.equal(
+          RENT_FEE.add(DEPOSIT_FEE).toString()
+        );
       });
 
-      describe("Check Rent Fee and Pda State Update", async () => {
+      it("Checking Pda State is updated", async () => {
+        const state_data = await program.account.rentalState.fetch(
+          rental_state
+        );
 
-          it("Checking Rent Fee is transferred to Contract", async () => {
-            let rent_vault_ata_balance = await getAccount(
-              provider.connection,
-              rent_vault_ata,
-            );
+        expect(state_data.rentalDuration.toString()).to.equal(
+          RENTAL_DURATION.toString()
+        );
 
-            expect(rent_vault_ata_balance.amount.toString()).to.equal((RENT_FEE.add(DEPOSIT_FEE)).toString());
-          });
+        expect(state_data.renter.toString()).to.equal(
+          new anchor.web3.PublicKey(renter.publicKey).toString()
+        );
 
-          it("Checking Pda State is updated", async () => {
-            const state_data = await program.account.rentalState.fetch(
-              rental_state
-            );
+        expect(state_data.rented).to.equal(true);
 
-    
-            expect(state_data.rentalDuration.toString()).to.equal(RENTAL_DURATION.toString());
+        expect(state_data.rentalStartTime.toString()).to.not.equal(0);
+      });
+    });
+  });
 
-            expect(state_data.renter.toString()).to.equal(new anchor.web3.PublicKey(renter.publicKey).toString());
+  describe("Return Car", async () => {
+    before(async () => {
+      await program.methods
+        .endRental()
+        .accountsStrict({
+          owner: new anchor.web3.PublicKey(owner.publicKey),
+          renter: new anchor.web3.PublicKey(renter.publicKey),
+          collectionMint: new anchor.web3.PublicKey(collection_mint.publicKey),
+          carNftMint: new anchor.web3.PublicKey(car_nft_mint.publicKey),
+          rentFeeMint: new anchor.web3.PublicKey(rent_fee_mint),
+          rentalState : rental_state,
+          rentVault : rent_vault_ata,
+          vault: vault_ata,
+          metadata: new anchor.web3.PublicKey(nftmetadata[0]),
+          masterEdition: masterEditionPda[0],
+          renterAta: renter_fee_ata,
+          ownerAta: owner_ata,
+          ownerFeeAta: owner_fee_ata,
+          systemProgram: SYSTEM_PROGRAM_ID,
+          associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          metadataProgram: MPL_TOKEN_METADATA_PROGRAM_ID,
+          clock: anchor.web3.SYSVAR_CLOCK_PUBKEY,
+        })
+        .signers([
+          convert_keypair_to_anchor_compatiable(renter),
+          convert_keypair_to_anchor_compatiable(owner),
+        ])
+        .rpc();
+    });
 
-            expect(state_data.rented).to.equal(true);
+    describe("Checking transfer of funds and NFT", async () => {
+      it("Checking NFT transferred to owner", async () => {
+        let owner_ata_info = await getAccount(provider.connection, owner_ata);
 
-            expect(state_data.rentalStartTime.toString()).to.not.equal(0);
-          })
-      })
+        let vault_ata_info = await getAccount(provider.connection, vault_ata);
 
-  })
+        expect(owner_ata_info.amount.toString()).to.equal("1");
+        expect(vault_ata_info.amount.toString()).to.equal("0");
+      });
 
+      it("checking deposit fee transferred to renter", async () => {
+        let renter_ata_info = await getAccount(
+          provider.connection,
+          renter_fee_ata
+        );
+        let vault_ata_balance = await getAccount(
+          provider.connection,
+          rent_vault_ata
+        );
 
+        expect(renter_ata_info.amount.toString()).to.equal(
+          (Number(renter_ata_info.amount) + DEPOSIT_FEE.toNumber()).toString()
+        );
+        expect(vault_ata_balance.amount.toString()).to.equal(
+          (Number(renter_ata_info.amount) - DEPOSIT_FEE.toNumber()).toString()
+        );
+      });
+
+      it("Checking transfer rent to owner", async () => {
+        let owner_ata_balance = await getAccount(
+          provider.connection,
+          owner_fee_ata
+        );
+
+        let vault_ata_balance = await getAccount(
+          provider.connection,
+          rent_vault_ata
+        );
+
+        expect(owner_ata_balance.amount.toString()).to.equal(
+          (Number(owner_ata_balance.amount) + RENT_FEE.toNumber()).toString()
+        );
+        expect(vault_ata_balance.amount.toString()).to.equal(
+          (Number(owner_ata_balance.amount) - RENT_FEE.toNumber()).toString()
+        );
+
+      });
+    });
+  });
 });

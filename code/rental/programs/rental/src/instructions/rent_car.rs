@@ -18,6 +18,7 @@ pub struct RentCar<'info>{
     pub rent_fee_mint:InterfaceAccount<'info,Mint>,
 
     #[account(
+        mut,
         seeds=[b"rental", car_nft_mint.key().as_ref(), owner.key().as_ref()],
         has_one = owner,
         bump = rental_state.rental_bump,
@@ -32,7 +33,6 @@ pub struct RentCar<'info>{
     )]
     pub rent_vault:InterfaceAccount<'info,TokenAccount>,
 
-
     #[account(
         init_if_needed,
         payer = renter,
@@ -40,9 +40,6 @@ pub struct RentCar<'info>{
         associated_token::authority = renter,
     )]
     pub renter_ata:InterfaceAccount<'info,TokenAccount>,
-
-    
-  
 
     pub system_program:Program<'info,System>,
     pub associated_token_program:Program<'info,AssociatedToken>,
@@ -104,8 +101,5 @@ impl<'info> RentCar<'info>{
     Ok(())
   }
 
-
-
-    
 }
 

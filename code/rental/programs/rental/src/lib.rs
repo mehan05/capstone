@@ -1,6 +1,6 @@
 use anchor_lang::prelude::*;
 
-declare_id!("5cNB4vSVibYZoma2BiDDtK1UQEEJdpL6WTUj3hzTRhao");
+declare_id!("JAKF3KyxdugBwNSDqAWvFz92D6gDk7Yx7iu7sS6c5HhP");
 
 pub mod errors;
 pub mod state;
@@ -10,17 +10,28 @@ pub mod instructions;
 pub use errors::*;
 pub use state::*;
 pub use constants::*;
-pub use instructions::*;
+pub use instructions::{list_car::*,end_rental::*,rent_car::*};
 
 #[program]
 pub mod rental {
     use super::*;
 
-    pub fn initialize(ctx: Context<Initialize>) -> Result<()> {
-        msg!("Greetings from: {:?}", ctx.program_id);
+    pub fn list_car(ctx:Context<ListCar>,rent_fee:u64,deposit_amount:u64)->Result<()>{
+        ctx.accounts.list_car(rent_fee,deposit_amount,ctx.bumps)?;
+
         Ok(())
     }
+
+    pub fn rent_car(ctx:Context<RentCar>,rental_duration:i64)->Result<()>{
+        ctx.accounts.rent_car(rental_duration)?;
+        Ok(())
+    }
+
+    pub fn end_rental(ctx:Context<EndRental>)->Result<()>{
+        ctx.accounts.end_rental()?;
+        Ok(())
+    }
+
+
 }
 
-#[derive(Accounts)]
-pub struct Initialize {}

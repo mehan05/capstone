@@ -1,9 +1,9 @@
-use anchor_lang::prelude::*;
+use anchor_lang::{prelude::*};
 use anchor_spl::{
-    associated_token::AssociatedToken, metadata::{MasterEditionAccount, Metadata, MetadataAccount}, token_interface::{transfer_checked, Mint, TokenAccount, TokenInterface, TransferChecked}
+    associated_token::AssociatedToken, metadata::{MasterEditionAccount, Metadata, MetadataAccount},
+    token_interface::{transfer_checked, Mint, TokenAccount, TokenInterface, TransferChecked}
 };
-
-use crate::{state::*,errors::*, constants::*};
+use crate::{state::*,errors::ErrorCode, constants::*};
 
 
 #[derive(Accounts)]
@@ -26,7 +26,7 @@ pub struct ListCar<'info>{
     pub rental_state:Account<'info,RentalState>,
 
     #[account(
-        init,
+        init_if_needed,
         payer = owner,
         associated_token::mint = car_nft_mint,
         associated_token::authority = owner
@@ -34,7 +34,7 @@ pub struct ListCar<'info>{
     pub owner_nft_account:InterfaceAccount<'info,TokenAccount>,
 
     #[account(
-        init,
+        init_if_needed,
         payer = owner,
         associated_token::mint = car_nft_mint,
         associated_token::authority = rental_state
@@ -55,17 +55,16 @@ pub struct ListCar<'info>{
     pub metadata:Account<'info,MetadataAccount>,
 
     #[account(
-        seeds=[b"metadata",metadata_program.key().as_ref(),car_nft_mint.key().as_ref()],
-        seeds::program = metadata_program.key(),
-        bump
+        seeds=[b"metadata",metadata_program.key().as_ref(),car_nft_mint.key().as_ref(), b"edition"],
+        bump,
+        seeds::program = metadata_program.key()
     )]
     pub master_edition:Account<'info,MasterEditionAccount>,
 
     pub system_program:Program<'info,System>,
     pub associated_token_program:Program<'info,AssociatedToken>,
     pub token_program:Interface<'info,TokenInterface>,
-    pub metadata_program:Program<'info,Metadata>,
-    pub clock:Sysvar<'info,Clock>
+    pub metadata_program: Program<'info, Metadata>,
 
 }
 
@@ -103,7 +102,7 @@ impl<'info> ListCar<'info>{
         let cpi_program = self.token_program.to_account_info();
 
         let cpi_accounts = TransferChecked{
-            from:self.owner.to_account_info(),
+            from:self.owner_nft_account.to_account_info(),
             to:self.vault.to_account_info(),
             mint:self.car_nft_mint.to_account_info(),
             authority:self.owner.to_account_info()
@@ -111,7 +110,7 @@ impl<'info> ListCar<'info>{
 
         let ctx = CpiContext::new(cpi_program,cpi_accounts);
 
-        transfer_checked(ctx, 1,self.car_nft_mint.decimals)?;
+        transfer_checked(ctx, 1,0)?;
 
         Ok(())
     }

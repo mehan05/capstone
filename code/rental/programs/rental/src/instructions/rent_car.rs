@@ -97,7 +97,7 @@ impl<'info> RentCar<'info>{
         authority:self.renter.to_account_info()
     };
 
-    let ctx = CpiContext::new(cpi_program.clone(),cpi_accounts);
+    let ctx = CpiContext::new(cpi_program,cpi_accounts);
 
     transfer_checked(ctx, self.rental_state.deposit_amount,self.rent_fee_mint.decimals)?;
 

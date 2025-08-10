@@ -15,6 +15,7 @@ pub struct ListCar<'info>{
     pub car_nft_mint:InterfaceAccount<'info,Mint>,
 
     pub collection_mint:InterfaceAccount<'info,Mint>,
+    pub rent_fee_mint:InterfaceAccount<'info,Mint>,
 
     #[account(
         init,
@@ -40,6 +41,14 @@ pub struct ListCar<'info>{
         associated_token::authority = rental_state
     )]
     pub vault:InterfaceAccount<'info,TokenAccount>,
+
+      #[account(
+        init_if_needed,
+        payer = owner,
+        associated_token::mint = rent_fee_mint,
+        associated_token::authority = owner,
+    )]
+    pub owner_fee_ata:InterfaceAccount<'info,TokenAccount>,
 
     #[account(
         seeds=[

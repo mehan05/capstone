@@ -60,7 +60,8 @@ pub struct EndRental<'info>{
         seeds=[
             b"metadata",
             metadata_program.key().as_ref(),
-            car_nft_mint.key().as_ref()
+            car_nft_mint.key().as_ref(),
+            b"edition"
         ],
         bump,
         seeds::program = metadata_program.key()
@@ -75,16 +76,14 @@ pub struct EndRental<'info>{
     pub renter_ata:InterfaceAccount<'info,TokenAccount>,
 
       #[account(
-        init_if_needed,
-        payer = owner,
+        mut,
         associated_token::mint = car_nft_mint,
         associated_token::authority = owner,
     )]
     pub owner_ata:InterfaceAccount<'info,TokenAccount>,
 
       #[account(
-        init_if_needed,
-        payer = renter,
+        mut,
         associated_token::mint = rent_fee_mint,
         associated_token::authority = owner,
     )]
@@ -114,7 +113,7 @@ impl<'info> EndRental<'info>{
         self.transfer_generic(self.rental_state.deposit_amount,self.rent_fee_mint.to_account_info(), self.renter_ata.to_account_info(), self.rent_vault.to_account_info(),self.rental_state.to_account_info(),self.rent_fee_mint.decimals)?;
 
         //sending rent to owner
-        self.transfer_generic(self.rental_state.rent_fee,self.rent_fee_mint.to_account_info(), self.rent_vault.to_account_info(),self.owner_ata.to_account_info(),self.owner_fee_ata.to_account_info(),self.rent_fee_mint.decimals)?;
+        self.transfer_generic(self.rental_state.rent_fee,self.rent_fee_mint.to_account_info(), self.owner_fee_ata.to_account_info(),self.rent_vault.to_account_info(),self.rental_state.to_account_info(),self.rent_fee_mint.decimals)?;
 
         self.rental_state.rental_duration = None;
         self.rental_state.renter = None;

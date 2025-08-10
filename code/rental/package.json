@@ -6,6 +6,7 @@
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.31.1",
+    "@helium/tuktuk-sdk": "^0.0.9",
     "@metaplex-foundation/mpl-candy-machine": "^6.1.0",
     "@metaplex-foundation/mpl-token-metadata": "^3.4.0",
     "@metaplex-foundation/umi": "^1.2.0",

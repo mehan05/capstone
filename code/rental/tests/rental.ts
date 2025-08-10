@@ -291,6 +291,8 @@ describe("rental", async () => {
           metadata: new anchor.web3.PublicKey(nftmetadata[0]),
           masterEdition: masterEditionPda[0],
           metadataProgram: MPL_TOKEN_METADATA_PROGRAM_ID,
+          rentFeeMint: new anchor.web3.PublicKey(rent_fee_mint),
+          ownerFeeAta: new anchor.web3.PublicKey(owner_fee_ata),
         })
         .signers([convert_keypair_to_anchor_compatiable(owner)])
         .rpc();
@@ -380,7 +382,21 @@ describe("rental", async () => {
   });
 
   describe("Return Car", async () => {
+    let renter_ata_info_before;
+
+    let owner_ata_balance_before;
+
     before(async () => {
+      renter_ata_info_before = await getAccount(
+        provider.connection,
+        renter_fee_ata
+      );
+
+      owner_ata_balance_before = await getAccount(
+        provider.connection,
+        owner_fee_ata
+      );
+
       await program.methods
         .endRental()
         .accountsStrict({
@@ -389,8 +405,8 @@ describe("rental", async () => {
           collectionMint: new anchor.web3.PublicKey(collection_mint.publicKey),
           carNftMint: new anchor.web3.PublicKey(car_nft_mint.publicKey),
           rentFeeMint: new anchor.web3.PublicKey(rent_fee_mint),
-          rentalState : rental_state,
-          rentVault : rent_vault_ata,
+          rentalState: rental_state,
+          rentVault: rent_vault_ata,
           vault: vault_ata,
           metadata: new anchor.web3.PublicKey(nftmetadata[0]),
           masterEdition: masterEditionPda[0],
@@ -431,10 +447,9 @@ describe("rental", async () => {
         );
 
         expect(renter_ata_info.amount.toString()).to.equal(
-          (Number(renter_ata_info.amount) + DEPOSIT_FEE.toNumber()).toString()
-        );
-        expect(vault_ata_balance.amount.toString()).to.equal(
-          (Number(renter_ata_info.amount) - DEPOSIT_FEE.toNumber()).toString()
+          (
+            Number(renter_ata_info_before.amount) + DEPOSIT_FEE.toNumber()
+          ).toString()
         );
       });
 
@@ -450,12 +465,12 @@ describe("rental", async () => {
         );
 
         expect(owner_ata_balance.amount.toString()).to.equal(
-          (Number(owner_ata_balance.amount) + RENT_FEE.toNumber()).toString()
-        );
-        expect(vault_ata_balance.amount.toString()).to.equal(
-          (Number(owner_ata_balance.amount) - RENT_FEE.toNumber()).toString()
+          (
+            Number(owner_ata_balance_before.amount) + RENT_FEE.toNumber()
+          ).toString()
         );
 
+        expect(vault_ata_balance.amount.toString()).to.equal("0");
       });
     });
   });

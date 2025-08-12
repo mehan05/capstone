@@ -9,7 +9,14 @@ import {
   percentAmount,
   publicKey,
 } from "@metaplex-foundation/umi";
-import { Keypair, LAMPORTS_PER_SOL, PublicKey, Signer } from "@solana/web3.js";
+import {
+  Keypair,
+  LAMPORTS_PER_SOL,
+  PublicKey,
+  Signer,
+  SYSVAR_CLOCK_PUBKEY,
+  Transaction,
+} from "@solana/web3.js";
 import {
   createNft,
   findMasterEditionPda,
@@ -31,11 +38,17 @@ import {
   ASSOCIATED_TOKEN_PROGRAM_ID,
 } from "@solana/spl-token";
 import { SYSTEM_PROGRAM_ID } from "@coral-xyz/anchor/dist/cjs/native/system";
+import { TUKTUK_IDL } from "./tuktuk";
+import { BN } from "bn.js";
 
 const provider = anchor.AnchorProvider.env();
 const RENT_FEE = new anchor.BN(5);
 const DEPOSIT_FEE = new anchor.BN(4);
 const RENTAL_DURATION = 300;
+const TUKTUK_CONFIG_SEED = Buffer.from("tuktuk_config");
+const TASK_QUEUE_SEED = Buffer.from("task_queue");
+const TASK_QUEUE_AUTHORITY_SEED = Buffer.from("queue_authority");
+const TASK_SEED = Buffer.from("task");
 
 const create_ata = async (
   mint: PublicKey,
@@ -273,6 +286,46 @@ describe("rental", async () => {
       throw error;
     }
   });
+  const compileTxFunction = (data:any) => {
+      const compiledTx = {
+        accounts: [
+          program.programId,
+          owner,
+          renter,
+          collection_mint,
+          car_nft_mint,
+          rent_fee_mint,
+          rental_state,
+          rent_vault_ata,
+          vault_ata,
+          nftmetadata,
+          masterEditionPda,
+          renter_ata,
+          owner_ata,
+          owner_fee_ata,
+          SYSTEM_PROGRAM_ID,
+          TOKEN_PROGRAM_ID,
+          ASSOCIATED_TOKEN_PROGRAM_ID,
+          MPL_TOKEN_METADATA_PROGRAM_ID,
+          SYSVAR_CLOCK_PUBKEY,
+        ],
+        instructions: [
+          {
+            programIdIndex: 0,
+            accounts: [
+              1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16, 15, 17, 18,
+            ],
+            data: data,
+          },
+        ],
+        numRwSigners: 0,
+        numRoSigners: 0,
+        numRw: 10,
+        signerSeeds: [],
+      };
+
+      return compiledTx;
+  };
 
   describe("List cars", async () => {
     before(async () => {
@@ -379,6 +432,8 @@ describe("rental", async () => {
         expect(state_data.rentalStartTime.toString()).to.not.equal(0);
       });
     });
+
+    await setupTuktukQueue("end_rental");
   });
 
   describe("Return Car", async () => {
@@ -397,33 +452,33 @@ describe("rental", async () => {
         owner_fee_ata
       );
 
-      await program.methods
-        .endRental()
-        .accountsStrict({
-          owner: new anchor.web3.PublicKey(owner.publicKey),
-          renter: new anchor.web3.PublicKey(renter.publicKey),
-          collectionMint: new anchor.web3.PublicKey(collection_mint.publicKey),
-          carNftMint: new anchor.web3.PublicKey(car_nft_mint.publicKey),
-          rentFeeMint: new anchor.web3.PublicKey(rent_fee_mint),
-          rentalState: rental_state,
-          rentVault: rent_vault_ata,
-          vault: vault_ata,
-          metadata: new anchor.web3.PublicKey(nftmetadata[0]),
-          masterEdition: masterEditionPda[0],
-          renterAta: renter_fee_ata,
-          ownerAta: owner_ata,
-          ownerFeeAta: owner_fee_ata,
-          systemProgram: SYSTEM_PROGRAM_ID,
-          associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
-          tokenProgram: TOKEN_PROGRAM_ID,
-          metadataProgram: MPL_TOKEN_METADATA_PROGRAM_ID,
-          clock: anchor.web3.SYSVAR_CLOCK_PUBKEY,
-        })
-        .signers([
-          convert_keypair_to_anchor_compatiable(renter),
-          convert_keypair_to_anchor_compatiable(owner),
-        ])
-        .rpc();
+      // await program.methods
+      //   .endRental()
+      //   .accountsStrict({
+      //     owner: new anchor.web3.PublicKey(owner.publicKey),
+      //     renter: new anchor.web3.PublicKey(renter.publicKey),
+      //     collectionMint: new anchor.web3.PublicKey(collection_mint.publicKey),
+      //     carNftMint: new anchor.web3.PublicKey(car_nft_mint.publicKey),
+      //     rentFeeMint: new anchor.web3.PublicKey(rent_fee_mint),
+      //     rentalState: rental_state,
+      //     rentVault: rent_vault_ata,
+      //     vault: vault_ata,
+      //     metadata: new anchor.web3.PublicKey(nftmetadata[0]),
+      //     masterEdition: masterEditionPda[0],
+      //     renterAta: renter_fee_ata,
+      //     ownerAta: owner_ata,
+      //     ownerFeeAta: owner_fee_ata,
+      //     systemProgram: SYSTEM_PROGRAM_ID,
+      //     associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+      //     tokenProgram: TOKEN_PROGRAM_ID,
+      //     metadataProgram: MPL_TOKEN_METADATA_PROGRAM_ID,
+      //     clock: anchor.web3.SYSVAR_CLOCK_PUBKEY,
+      //   })
+      //   .signers([
+      //     convert_keypair_to_anchor_compatiable(renter),
+      //     convert_keypair_to_anchor_compatiable(owner),
+      //   ])
+      //   .rpc();
     });
 
     describe("Checking transfer of funds and NFT", async () => {
@@ -474,4 +529,209 @@ describe("rental", async () => {
       });
     });
   });
+
+  //-----------------------------------------------------------------------------------------------------------------------------
+  async function setupTuktukQueue(queueName: string) {
+
+    console.log("\nSetting up Tuktuk Task Queue...");
+
+    const keypairFromPayer = Keypair.fromSecretKey(
+      new Uint8Array(paySigner.secretKey)
+    );
+
+    const tuktukProgram = new Program(TUKTUK_IDL, provider);
+
+    const [tuktukConfigKey] = PublicKey.findProgramAddressSync(
+      [TUKTUK_CONFIG_SEED],
+      tuktukProgram.programId
+    );
+
+    const [taskQueueKey] = PublicKey.findProgramAddressSync(
+      [TASK_QUEUE_SEED, Buffer.from(queueName)],
+      tuktukProgram.programId
+    );
+
+    // Check if setup is already done
+    const queueAccountInfo = await provider.connection.getAccountInfo(
+      taskQueueKey
+    );
+    if (queueAccountInfo) {
+      console.log(`Task Queue '${queueName}' already exists. Skipping setup.`);
+      return taskQueueKey;
+    }
+
+    console.log("Performing one-time setup for Tuktuk Task Queue...");
+    const setupTx = new Transaction();
+
+    // Instruction 1: Initialize Tuktuk Config (if it doesn't exist)
+    const configAccountInfo = await provider.connection.getAccountInfo(
+      tuktukConfigKey
+    );
+    if (!configAccountInfo) {
+      const initConfigIx = await tuktukProgram.methods
+        .initializeTuktukConfigV0({
+          minDeposit: new anchor.BN(0),
+        })
+        .accounts({
+          tuktukConfig: tuktukConfigKey,
+          payer: keypairFromPayer.publicKey,
+          approver: keypairFromPayer.publicKey, // In a real scenario, this would be a separate, trusted authority
+          authority: keypairFromPayer.publicKey,
+          systemProgram: SYSTEM_PROGRAM_ID,
+        })
+        .instruction();
+      setupTx.add(initConfigIx);
+    }
+
+    // Instruction 2: Initialize the Task Queue
+    const initQueueIx = await tuktukProgram.methods
+      .initializeTaskQueueV0({
+        name: queueName,
+        capacity: 100, // Max 100 tasks in queue
+        minCrankReward: new BN(10000), // Small reward for the cranker
+        staleTaskAge: 3600, // 1 hour
+        lookupTables: [],
+      })
+      .accounts({
+        taskQueue: taskQueueKey,
+        tuktukConfig: tuktukConfigKey,
+        payer: keypairFromPayer.publicKey,
+        updateAuthority: keypairFromPayer.publicKey,
+        systemProgram: SYSTEM_PROGRAM_ID,
+        taskQueueNameMapping: PublicKey.default, // Not used in this version
+      })
+      .instruction();
+    setupTx.add(initQueueIx);
+
+    // Instruction 3: Add our wallet as an authority that can add tasks to this queue
+    const [taskQueueAuthorityKey] = PublicKey.findProgramAddressSync(
+      [
+        TASK_QUEUE_AUTHORITY_SEED,
+        taskQueueKey.toBuffer(),
+        keypairFromPayer.publicKey.toBuffer(),
+      ],
+      tuktukProgram.programId
+    );
+    
+    const addAuthIx = await tuktukProgram.methods
+      .addQueueAuthorityV0()
+      .accounts({
+        taskQueueAuthority: taskQueueAuthorityKey,
+        taskQueue: taskQueueKey,
+        updateAuthority: keypairFromPayer.publicKey,
+        queueAuthority: keypairFromPayer.publicKey,
+        payer: keypairFromPayer.publicKey,
+        systemProgram: SYSTEM_PROGRAM_ID,
+      })
+      .instruction();
+    setupTx.add(addAuthIx);
+
+    try {
+      const txSignature = await provider.sendAndConfirm(setupTx, [
+        keypairFromPayer,
+      ]);
+      console.log(
+        `Setup complete! Transaction: https://explorer.solana.com/tx/${txSignature}?cluster=devnet`
+      );
+    } catch (err) {
+      console.error("Error during setup:", err);
+      throw err;
+    }
+
+    scheduleEndRental(taskQueueKey, tuktukProgram, keypairFromPayer);
+
+    return taskQueueKey;
+  }
+
+  async function scheduleEndRental(
+    taskQueueKey: PublicKey,
+    tuktukProgram: any,
+    keypair: any
+  ) {
+    console.log("\nScheduling an 'end_rental' task...");
+
+    const tx_end_rental =   await program.methods
+        .endRental()
+        .accountsStrict({
+          owner: new anchor.web3.PublicKey(owner.publicKey),
+          renter: new anchor.web3.PublicKey(renter.publicKey),
+          collectionMint: new anchor.web3.PublicKey(collection_mint.publicKey),
+          carNftMint: new anchor.web3.PublicKey(car_nft_mint.publicKey),
+          rentFeeMint: new anchor.web3.PublicKey(rent_fee_mint),
+          rentalState: rental_state,
+          rentVault: rent_vault_ata,
+          vault: vault_ata,
+          metadata: new anchor.web3.PublicKey(nftmetadata[0]),
+          masterEdition: masterEditionPda[0],
+          renterAta: renter_fee_ata,
+          ownerAta: owner_ata,
+          ownerFeeAta: owner_fee_ata,
+          systemProgram: SYSTEM_PROGRAM_ID,
+          associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          metadataProgram: MPL_TOKEN_METADATA_PROGRAM_ID,
+          clock: anchor.web3.SYSVAR_CLOCK_PUBKEY,
+        })
+        .signers([
+          convert_keypair_to_anchor_compatiable(renter),
+          convert_keypair_to_anchor_compatiable(owner),
+        ])
+        .instruction();
+
+
+    const rentalEndTime = new BN(1723440865);
+    const trigger = { timestamp: rentalEndTime };
+
+    const taskId = 2;
+    const queueTaskArgs = {
+      id: taskId,
+      trigger: trigger,
+      transaction: { compiledV0: compileTxFunction(tx_end_rental.data) },
+    };
+
+    console.log("Scheduling logic would run here...");
+
+    const [taskKey] = PublicKey.findProgramAddressSync(
+      [
+        TASK_SEED,
+        taskQueueKey.toBuffer(),
+        new BN(taskId).toArrayLike(Buffer, "le", 2),
+      ],
+      tuktukProgram.programId
+    );
+    const [taskQueueAuthorityKey] = PublicKey.findProgramAddressSync(
+      [
+        TASK_QUEUE_AUTHORITY_SEED,
+        taskQueueKey.toBuffer(),
+        keypair.publicKey.toBuffer(),
+      ],
+      tuktukProgram.programId
+    );
+
+    try {
+      const txSignature = await tuktukProgram.methods
+        .queueTaskV0(queueTaskArgs)
+        .accounts({
+          task: taskKey,
+          taskQueue: taskQueueKey,
+          taskQueueAuthority: taskQueueAuthorityKey,
+          queueAuthority: keypair.publicKey,
+          payer: keypair.publicKey,
+          systemProgram: SYSTEM_PROGRAM_ID,
+        })
+        .signers([keypair]) // Our wallet is both the payer and the queue authority
+        .rpc();
+
+      console.log(`\n✅ Task successfully scheduled!`);
+      console.log(
+        `Transaction: https://explorer.solana.com/tx/${txSignature}?cluster=devnet`
+      );
+      console.log(`It will be executable in about 60 seconds.`);
+      console.log(
+        `You can run it later using a crank client against the task key: ${taskKey.toBase58()}`
+      );
+    } catch (err) {
+      console.error("Error scheduling task:", err);
+    }
+  }
 });

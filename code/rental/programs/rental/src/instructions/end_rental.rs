@@ -118,6 +118,7 @@ impl<'info> EndRental<'info>{
         self.rental_state.rental_duration = None;
         self.rental_state.renter = None;
         self.rental_state.rented = false;
+        self.rental_state.status = StatusData::Finished;
 
         Ok(())
     

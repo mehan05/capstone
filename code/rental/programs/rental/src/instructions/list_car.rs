@@ -101,6 +101,9 @@ impl<'info> ListCar<'info>{
             rental_bump : bumps.rental_state,
             listed:true,
             rented:false,
+            status:StatusData::Active,
+            dispute_caller:None,
+            test_num:None
         });
 
         Ok(())

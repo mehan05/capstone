@@ -18,5 +18,15 @@ pub enum ErrorCode{
 
     #[msg("Invalid Renter")]
     InvalidRenter,
+
+
+    #[msg("Dispute already initiated")]
+    DisputeAlreadyInitiated,
+
+    #[msg("Invalid Payout")]
+    InvalidPayout,
+
+    #[msg("Dispute not initiated")]
+    DisputeNotInitiated
 }
 

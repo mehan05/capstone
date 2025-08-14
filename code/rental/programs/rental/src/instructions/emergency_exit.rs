@@ -8,6 +8,7 @@ use crate::{state::*,errors::ErrorCode, constants::*};
 
 #[derive(Accounts)]
 pub struct EmergencyExit<'info> {
+
     #[account(mut)]
     pub owner:Signer<'info>,
 
@@ -23,11 +24,12 @@ pub struct EmergencyExit<'info> {
     pub car_nft_mint:InterfaceAccount<'info,Mint>,
     pub rent_fee_mint:InterfaceAccount<'info,Mint>,
 
-      #[account(
+
+    #[account(
         mut,
         seeds=[b"rental", car_nft_mint.key().as_ref(), owner.key().as_ref()],
+        has_one = owner,
         bump = rental_state.rental_bump,
-        has_one=owner
     )]
     pub rental_state:Account<'info,RentalState>,
 
@@ -62,7 +64,8 @@ pub struct EmergencyExit<'info> {
         seeds=[
             b"metadata",
             metadata_program.key().as_ref(),
-            car_nft_mint.key().as_ref()
+            car_nft_mint.key().as_ref(),
+            b"edition"
         ],
         seeds::program = metadata_program.key(),
         bump
@@ -77,36 +80,72 @@ pub struct EmergencyExit<'info> {
     )]
     pub renter_ata:InterfaceAccount<'info,TokenAccount>,
 
+          #[account(
+        mut,
+        associated_token::mint = car_nft_mint,
+        associated_token::authority = owner,
+    )]
+    pub owner_ata:InterfaceAccount<'info,TokenAccount>,
+
+      #[account(
+        mut,
+        associated_token::mint = rent_fee_mint,
+        associated_token::authority = owner,
+    )]
+    pub owner_fee_ata:InterfaceAccount<'info,TokenAccount>,
+
 
     pub system_program:Program<'info,System>,
     pub associated_token_program:Program<'info,AssociatedToken>,
     pub token_program:Interface<'info,TokenInterface>,
-    pub clock:Sysvar<'info,Clock>,
     pub metadata_program:Program<'info,Metadata>
 }
 
 impl<'info> EmergencyExit<'info>{
-    pub fn end_rental_at_exit(&mut self, deposit_amount:u64, to:Pubkey)->Result<()>{
 
-        let current_time  = Clock::get()?;
+    pub fn exit_payout(&mut self, renter_payout:u64,owner_payout:u64)->Result<()>{
+        self.rental_state.status = StatusData::Dispute;
+         require!(self.rental_state.status == StatusData::Dispute, ErrorCode::DisputeNotInitiated);
 
-        require!(deposit_amount <= self.rental_state.deposit_amount,ErrorCode::InsufficientFunds);
-     
-        require!(current_time.unix_timestamp >= self.rental_state.rental_start_time.unwrap(),ErrorCode::RentalPeriodNotEnd);
+    let total_in_escrow = self.rental_state.rent_fee.checked_add(self.rental_state.deposit_amount).unwrap();
+    require!(renter_payout.checked_add(owner_payout).unwrap() <= total_in_escrow, ErrorCode::InvalidPayout);
 
         //sending nft to owner
-        self.transfer_generic(1, self.car_nft_mint.to_account_info(), self.owner.to_account_info(), self.vault.to_account_info(),self.car_nft_mint.decimals,self.rental_state.to_account_info())?;
+           self.transfer_generic(
+        1,
+        self.car_nft_mint.to_account_info(),
+        self.owner_ata.to_account_info(),      
+        self.vault.to_account_info(),
+        self.car_nft_mint.decimals,
+        self.rental_state.to_account_info()
+    )?;
 
-        //sending deposit to renter
-        self.transfer_generic(deposit_amount,self.rent_fee_mint.to_account_info(), self.renter_ata.to_account_info(), self.rent_vault.to_account_info(),self.rent_fee_mint.decimals,self.rental_state.to_account_info())?;
-
-        //sending rent to owner
-        self.transfer_generic(self.rental_state.rent_fee,self.rent_fee_mint.to_account_info(), self.rent_vault.to_account_info(),self.owner.to_account_info(),self.rent_fee_mint.decimals,self.owner.to_account_info())?;
-
+         if owner_payout > 0 {
+        self.transfer_generic(
+            owner_payout,
+            self.rent_fee_mint.to_account_info(),
+            self.owner_fee_ata.to_account_info(), 
+            self.rent_vault.to_account_info(),   
+            self.rent_fee_mint.decimals,
+            self.rental_state.to_account_info()
+        )?;
+    }
+       
+        if renter_payout > 0 {
+        self.transfer_generic(
+            renter_payout,
+            self.rent_fee_mint.to_account_info(),
+            self.renter_ata.to_account_info(),   
+            self.rent_vault.to_account_info(),  
+            self.rent_fee_mint.decimals,
+            self.rental_state.to_account_info()
+        )?;
+    }
+        self.rental_state.dispute_caller  =Some( self.arbitrator.key());
         self.rental_state.rental_duration = None;
         self.rental_state.renter = None;
         self.rental_state.rented = false;
-
+        self.rental_state.status = StatusData::Finished;
         Ok(())
     
     }

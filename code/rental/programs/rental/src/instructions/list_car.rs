@@ -58,8 +58,9 @@ pub struct ListCar<'info>{
         ],
         seeds::program = metadata_program.key(),
         bump,
-        constraint = metadata.collection.as_ref().unwrap().key.as_ref() == collection_mint.key().as_ref(),
-        constraint = metadata.collection.as_ref().unwrap().verified == true
+        constraint = metadata.collection.is_some() @ ErrorCode::MissingCollection,
+        constraint = metadata.collection.as_ref().unwrap().key == collection_mint.key() @ ErrorCode::InvalidCollection,
+        constraint = metadata.collection.as_ref().unwrap().verified @ ErrorCode::UnverifiedCollection
     )]
     pub metadata:Account<'info,MetadataAccount>,
 

@@ -27,6 +27,15 @@ pub enum ErrorCode{
     InvalidPayout,
 
     #[msg("Dispute not initiated")]
-    DisputeNotInitiated
+    DisputeNotInitiated,
+
+    #[msg("NFT does not have a collection assigned.")]
+    MissingCollection,
+
+    #[msg("NFT collection mint does not match expected collection.")]
+    InvalidCollection,
+    
+    #[msg("NFT collection is not verified.")]
+    UnverifiedCollection,
 }
 

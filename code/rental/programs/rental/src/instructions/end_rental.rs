@@ -15,10 +15,10 @@ pub struct EndRental<'info>{
     #[account(mut)]
     pub renter:Signer<'info>,
 
-    pub collection_mint:InterfaceAccount<'info,Mint>,
+    pub collection_mint:Box<InterfaceAccount<'info,Mint>>,
 
-    pub car_nft_mint:InterfaceAccount<'info,Mint>,
-    pub rent_fee_mint:InterfaceAccount<'info,Mint>,
+    pub car_nft_mint:Box<InterfaceAccount<'info,Mint>>,
+    pub rent_fee_mint:Box<InterfaceAccount<'info,Mint>>,
 
       #[account(
         mut,
@@ -27,21 +27,21 @@ pub struct EndRental<'info>{
         has_one=owner,
         close=owner
     )]
-    pub rental_state:Account<'info,RentalState>,
+    pub rental_state:Box<Account<'info,RentalState>>,
 
     #[account(
         mut,
         associated_token::mint = rent_fee_mint,
         associated_token::authority = rental_state,
     )]
-    pub rent_vault:InterfaceAccount<'info,TokenAccount>,
+    pub rent_vault:Box<InterfaceAccount<'info,TokenAccount>>,
 
     #[account(
         mut,
         associated_token::mint = car_nft_mint,
         associated_token::authority = rental_state,
     )]
-    pub vault:InterfaceAccount<'info,TokenAccount>,
+    pub vault:Box<InterfaceAccount<'info,TokenAccount>>,
 
     #[account(
         seeds=[
@@ -51,10 +51,11 @@ pub struct EndRental<'info>{
         ],
         seeds::program = metadata_program.key(),
         bump,
-        constraint = metadata.collection.as_ref().unwrap().key.as_ref() == collection_mint.key().as_ref(),
-        constraint = metadata.collection.as_ref().unwrap().verified == true,
+         constraint = metadata.collection.is_some() @ ErrorCode::MissingCollection,
+        constraint = metadata.collection.as_ref().unwrap().key == collection_mint.key() @ ErrorCode::InvalidCollection,
+        constraint = metadata.collection.as_ref().unwrap().verified @ ErrorCode::UnverifiedCollection
     )]
-    pub metadata:Account<'info,MetadataAccount>,
+    pub metadata:Box<Account<'info,MetadataAccount>>,
 
     #[account(
         seeds=[
@@ -66,28 +67,28 @@ pub struct EndRental<'info>{
         bump,
         seeds::program = metadata_program.key()
     )]
-    pub master_edition:Account<'info,MasterEditionAccount>,
+    pub master_edition:Box<Account<'info,MasterEditionAccount>>,
 
         #[account(
         mut,
         associated_token::mint = rent_fee_mint,
         associated_token::authority = renter,
     )]
-    pub renter_ata:InterfaceAccount<'info,TokenAccount>,
+    pub renter_ata:Box<InterfaceAccount<'info,TokenAccount>>,
 
       #[account(
         mut,
         associated_token::mint = car_nft_mint,
         associated_token::authority = owner,
     )]
-    pub owner_ata:InterfaceAccount<'info,TokenAccount>,
+    pub owner_ata:Box<InterfaceAccount<'info,TokenAccount>>,
 
       #[account(
         mut,
         associated_token::mint = rent_fee_mint,
         associated_token::authority = owner,
     )]
-    pub owner_fee_ata:InterfaceAccount<'info,TokenAccount>,
+    pub owner_fee_ata:Box<InterfaceAccount<'info,TokenAccount>>,
 
     pub system_program:Program<'info,System>,
     pub associated_token_program:Program<'info,AssociatedToken>,
@@ -97,6 +98,7 @@ pub struct EndRental<'info>{
 }
 
 impl<'info> EndRental<'info>{
+
     pub fn end_rental(&mut self)->Result<()>{
 
         let current_time  = Clock::get()?;
